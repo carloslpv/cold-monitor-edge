@@ -12,6 +12,7 @@ import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -25,6 +26,7 @@ import org.springframework.util.StringUtils;
  * {@link ReadingForwarder} filters out.
  */
 @Component
+@ConditionalOnProperty(name = "cold-monitor.bridge.source", havingValue = "mqtt", matchIfMissing = true)
 class MqttSubscriber implements SmartLifecycle, MqttCallbackExtended {
 
 	private static final Logger log = LoggerFactory.getLogger(MqttSubscriber.class);
@@ -150,18 +152,19 @@ class MqttSubscriber implements SmartLifecycle, MqttCallbackExtended {
 	@Override
 	public void messageArrived(String topic, MqttMessage message) throws MqttException {
 		String device = deviceOf(topic);
-		boolean done;
+		MessageHandler.Disposition disposition;
 		if (device == null) {
 			log.warn("Ignoring message on unexpected topic {}", topic);
-			done = true;
+			disposition = MessageHandler.Disposition.DONE;
 		}
 		else if (topic.endsWith("/readings")) {
-			done = handler.onReading(device, message.getPayload());
+			disposition = handler.onReading(device, message.getPayload());
 		}
 		else {
-			done = handler.onStatus(device, message.getPayload());
+			disposition = handler.onStatus(device, message.getPayload());
 		}
-		if (done) {
+		// MQTT has no dead-letter queue: an undeliverable reading was logged and counted, and is acknowledged
+		if (disposition != MessageHandler.Disposition.STOPPING) {
 			client.messageArrivedComplete(message.getId(), message.getQos());
 		}
 	}

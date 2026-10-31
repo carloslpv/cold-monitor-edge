@@ -46,8 +46,10 @@ class BridgePropertiesTests {
 	}
 
 	private static BridgeProperties properties(List<String> probes) {
-		return new BridgeProperties(
+		return new BridgeProperties(BridgeProperties.Source.MQTT,
 				new BridgeProperties.Mqtt("tcp://localhost:1883", "bridge", null, null, "coldmonitor"),
+				new BridgeProperties.Amqp(URI.create("amqp://localhost:5672"), "bridge", null, "coldmonitor.bridge",
+						"coldmonitor.bridge.dead"),
 				new BridgeProperties.Backend(URI.create("http://localhost:8080"), "key-0123456789abcdef",
 						Duration.ofSeconds(1)),
 				probes, new BridgeProperties.Retry(Duration.ofSeconds(1), Duration.ofMinutes(1)), 100);

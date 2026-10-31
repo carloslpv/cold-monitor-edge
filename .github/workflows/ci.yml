@@ -32,11 +32,17 @@ jobs:
       - run: ./build/onewire-test/onewire_test
 
   firmware-e2e:
-    name: Firmware end to end (QEMU + Mosquitto)
+    name: Firmware end to end (QEMU + ${{ matrix.broker }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # the same firmware and the same test against both brokers the repository ships a setup for
+        broker: [Mosquitto, RabbitMQ]
     steps:
       - uses: actions/checkout@v5
       - name: Start Mosquitto with the repository's config and ACL
+        if: matrix.broker == 'Mosquitto'
         run: |
           mkdir -p /tmp/mosquitto && cp mosquitto/mosquitto.conf mosquitto/acl /tmp/mosquitto/
           docker run --rm -v /tmp/mosquitto:/m eclipse-mosquitto:2 sh -c '
@@ -44,8 +50,19 @@ jobs:
             mosquitto_passwd -b /m/passwd cm-qemu qemu-only &&
             mosquitto_passwd -b /m/passwd admin e2e-admin &&
             chmod 0700 /m/passwd /m/acl && chown 1883:1883 /m/passwd /m/acl'
-          docker run -d --name mosquitto -p 1884:1883 -v /tmp/mosquitto:/mosquitto/config eclipse-mosquitto:2
-      # the device connects to 1883 on the host, where the test's proxy sits in front of Mosquitto
+          docker run -d --name broker -p 1884:1883 -v /tmp/mosquitto:/mosquitto/config eclipse-mosquitto:2
+      - name: Start RabbitMQ with the repository's config and users
+        if: matrix.broker == 'RabbitMQ'
+        run: |
+          docker run -d --name broker --hostname rabbitmq -p 1884:1883 \
+            -e RABBITMQ_DEFAULT_USER=admin -e RABBITMQ_DEFAULT_PASS=e2e-admin \
+            -v "$PWD/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-cold-monitor.conf:ro" \
+            -v "$PWD/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro" rabbitmq:4.1-management
+          # wait on the log: running rabbitmqctl as root before the server writes its Erlang cookie would create
+          # the cookie with the wrong owner and stop the server from starting
+          timeout 120 sh -c 'until docker logs broker 2>&1 | grep -q "Server startup complete"; do sleep 1; done'
+          echo qemu-only | RABBITMQ_CONTAINER=broker ./rabbitmq/users.sh device cm-qemu
+      # the device connects to 1883 on the host, where the test's proxy sits in front of the broker
       - name: Build the emulator firmware and run the test
         run: |
           docker run --rm --network host -v "$PWD:/repo" -w /repo/firmware espressif/idf:v5.4 bash -c '
@@ -58,7 +75,7 @@ jobs:
         run: cat firmware/build-qemu/qemu.log || true
       - name: Broker log
         if: always()
-        run: docker logs mosquitto
+        run: docker logs broker
 
   bridge:
     name: Bridge build and test
@@ -74,7 +91,8 @@ jobs:
           java-version: 25
           cache: maven
           cache-dependency-path: bridge/pom.xml
-      # the integration tests start an embedded MQTT broker, no Docker needed
+      # the MQTT tests start an embedded broker; the AMQP tests start RabbitMQ with Testcontainers, on the
+      # runner's Docker
       - run: ./mvnw -B verify
 
   bridge-docker:

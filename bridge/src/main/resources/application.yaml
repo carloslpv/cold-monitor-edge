@@ -7,6 +7,12 @@ spring:
 
 cold-monitor:
   bridge:
+    # mqtt: subscribe to Mosquitto; amqp: consume a RabbitMQ queue fed by its MQTT plugin
+    source: ${BRIDGE_SOURCE:mqtt}
+    amqp:
+      uri: ${AMQP_URI:amqp://localhost:5672}
+      username: ${AMQP_USERNAME:bridge}
+      password: ${AMQP_PASSWORD:}
     mqtt:
       uri: ${MQTT_URI:tcp://localhost:1883}
       client-id: ${MQTT_CLIENT_ID:cold-monitor-bridge}

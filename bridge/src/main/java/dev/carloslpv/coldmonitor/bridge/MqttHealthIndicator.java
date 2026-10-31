@@ -1,5 +1,6 @@
 package dev.carloslpv.coldmonitor.bridge;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.stereotype.Component;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Component;
  * receives nothing.
  */
 @Component("mqtt")
+@ConditionalOnProperty(name = "cold-monitor.bridge.source", havingValue = "mqtt", matchIfMissing = true)
 class MqttHealthIndicator implements HealthIndicator {
 
 	private final MqttSubscriber subscriber;
