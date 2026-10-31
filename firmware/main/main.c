@@ -78,11 +78,11 @@ static void measure_task(void *arg)
                 .probe = probes[i].address,
                 .centi_celsius = payload_centi_celsius(probes[i].celsius),
             };
-            if (!outbox_push(&outbox, &reading)) {
+            if (!reading_outbox_push(&outbox, &reading)) {
                 ESP_LOGW(TAG, "outbox full, oldest reading dropped (%" PRIu32 " so far)", outbox.dropped);
             }
         }
-        size_t pending = outbox_pending(&outbox);
+        size_t pending = reading_outbox_pending(&outbox);
         xSemaphoreGive(outbox_lock);
 
         ESP_LOGI(TAG, "%u reading(s) taken, %u waiting for delivery", (unsigned)n, (unsigned)pending);
@@ -100,7 +100,7 @@ void app_main(void)
     ESP_LOGI(TAG, "device %s, boot %" PRIu32, device_id, boot_id);
 
     outbox_lock = xSemaphoreCreateMutex();
-    outbox_init(&outbox, outbox_storage, CONFIG_CM_OUTBOX_CAPACITY);
+    reading_outbox_init(&outbox, outbox_storage, CONFIG_CM_OUTBOX_CAPACITY);
     ESP_ERROR_CHECK(probes_init(CONFIG_CM_ONEWIRE_GPIO));
 
     ESP_ERROR_CHECK(esp_netif_init());

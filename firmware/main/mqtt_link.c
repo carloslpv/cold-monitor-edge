@@ -62,12 +62,12 @@ static void on_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         connected = false;
         // readings published without a PUBACK are sent again after reconnecting
         xSemaphoreTake(cfg.lock, portMAX_DELAY);
-        outbox_requeue_inflight(cfg.outbox);
+        reading_outbox_requeue_inflight(cfg.outbox);
         xSemaphoreGive(cfg.lock);
         break;
     case MQTT_EVENT_PUBLISHED:
         xSemaphoreTake(cfg.lock, portMAX_DELAY);
-        outbox_ack(cfg.outbox, event->msg_id);
+        reading_outbox_ack(cfg.outbox, event->msg_id);
         xSemaphoreGive(cfg.lock);
         mqtt_link_notify();
         break;
@@ -96,8 +96,8 @@ static void publish_task(void *arg)
         ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(IDLE_WAKEUP_MS));
         while (connected) {
             xSemaphoreTake(cfg.lock, portMAX_DELAY);
-            outbox_entry_t *entry = outbox_inflight(cfg.outbox) < cfg.max_inflight
-                                    ? outbox_next_unsent(cfg.outbox) : NULL;
+            outbox_entry_t *entry = reading_outbox_inflight(cfg.outbox) < cfg.max_inflight
+                                    ? reading_outbox_next_unsent(cfg.outbox) : NULL;
             int len = -1;
             if (entry != NULL) {
                 reading_t reading = entry->reading;
@@ -119,7 +119,7 @@ static void publish_task(void *arg)
             xSemaphoreTake(cfg.lock, portMAX_DELAY);
             // a new reading may have overwritten the slot meanwhile (outbox full); mark only the one just sent
             if (entry->msg_id == OUTBOX_UNSENT && entry->reading.seq == seq) {
-                outbox_mark_sent(entry, msg_id);
+                reading_outbox_mark_sent(entry, msg_id);
             }
             xSemaphoreGive(cfg.lock);
         }
