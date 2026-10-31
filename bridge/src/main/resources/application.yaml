@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: cold-monitor-bridge
+  config:
+    # local secrets (broker password, backend key); the file is git-ignored
+    import: optional:file:.env[.properties]
+
+cold-monitor:
+  bridge:
+    mqtt:
+      uri: ${MQTT_URI:tcp://localhost:1883}
+      client-id: ${MQTT_CLIENT_ID:cold-monitor-bridge}
+      username: ${MQTT_USERNAME:bridge}
+      password: ${MQTT_PASSWORD:}
+    backend:
+      url: ${BACKEND_URL:http://localhost:8080}
+      api-key: ${BACKEND_API_KEY:}
+    # <probe ROM code>=<equipment id>, comma separated
+    probes: ${BRIDGE_PROBES:}
+
+server:
+  # the bridge serves no API: this port only carries the health check and the Prometheus metrics
+  port: ${SERVER_PORT:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
