@@ -1,0 +1,47 @@
+# The same as compose.yaml with RabbitMQ in place of Mosquitto: the devices still speak MQTT (RabbitMQ's MQTT
+# plugin), and the bridge consumes a durable queue over AMQP, with a dead-letter queue for what it cannot forward.
+# Users are created once with rabbitmq/users.sh. Settings come from .env, see .env.example.
+#
+#   docker compose -f compose.rabbitmq.yaml up -d
+services:
+  rabbitmq:
+    image: rabbitmq:4.1-management
+    hostname: rabbitmq # the data directory is named after the node, keep it stable
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD:?set RABBITMQ_ADMIN_PASSWORD in .env}
+    ports:
+      - "1883:1883" # MQTT, for the devices
+      - "15672:15672" # management UI
+    volumes:
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-cold-monitor.conf:ro
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_port_connectivity"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+
+  bridge:
+    build: ./bridge
+    restart: unless-stopped
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      BRIDGE_SOURCE: amqp
+      AMQP_URI: amqp://rabbitmq:5672
+      AMQP_USERNAME: bridge
+      AMQP_PASSWORD: ${AMQP_BRIDGE_PASSWORD:?set AMQP_BRIDGE_PASSWORD in .env}
+      BACKEND_URL: ${BACKEND_URL:-http://host.docker.internal:8080}
+      BACKEND_API_KEY: ${BACKEND_API_KEY:?set BACKEND_API_KEY in .env}
+      BRIDGE_PROBES: ${BRIDGE_PROBES:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8081:8081"
+
+volumes:
+  rabbitmq-data:
