@@ -91,6 +91,15 @@ static void measure_task(void *arg)
     }
 }
 
+/**
+ * Asks for the time once there is an address. A request sent before that goes nowhere, and lwIP only tries again
+ * 15 s later, by when the first readings may already have gone out without a timestamp.
+ */
+static void on_got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
+{
+    esp_netif_sntp_start();
+}
+
 void app_main(void)
 {
     init_nvs();
@@ -105,6 +114,12 @@ void app_main(void)
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+
+    esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_CM_NTP_SERVER);
+    sntp_config.start = false; // started by on_got_ip, registered before the network comes up
+    ESP_ERROR_CHECK(esp_netif_sntp_init(&sntp_config));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_STA_GOT_IP, on_got_ip, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, on_got_ip, NULL));
 #if CONFIG_CM_NETWORK_QEMU
     qemu_network_start();
 #else
@@ -115,9 +130,6 @@ void app_main(void)
     // sets the clock are dated from the uptime when they are sent
     // the 1-Wire bit timing runs with interrupts off on its core, so keep it off core 0, where Wi-Fi runs
     xTaskCreatePinnedToCore(measure_task, "measure", 4096, NULL, 6, NULL, portNUM_PROCESSORS - 1);
-
-    esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_CM_NTP_SERVER);
-    ESP_ERROR_CHECK(esp_netif_sntp_init(&sntp_config));
 
     const mqtt_link_config_t link = {
         .broker_uri = CONFIG_CM_MQTT_BROKER_URI,

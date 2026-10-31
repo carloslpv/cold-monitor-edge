@@ -9,3 +9,5 @@ CONFIG_CM_MQTT_BROKER_URI="mqtt://10.0.2.2:1883"
 CONFIG_CM_MQTT_PASSWORD="qemu-only"
 CONFIG_CM_NTP_SERVER="10.0.2.2"
 CONFIG_CM_READ_INTERVAL_S=5
+# a real fleet spreads its first NTP requests over a few seconds; the single emulated device asks right away
+CONFIG_LWIP_SNTP_STARTUP_DELAY=n

@@ -239,9 +239,20 @@ def check_reading(r: dict) -> None:
     if not (3.0 <= r["t"] <= 7.0 or -27.0 <= r["t"] <= -23.0):
         raise Failure(f"temperature {r['t']} out of the simulated ranges")
     if "ts" not in r:
-        raise Failure(f"reading without a timestamp: {r}")
+        return  # sent before the device's clock was set; check_dating looks at those
     if not (r["received"] - 600 <= r["ts"] <= r["received"] + 5):
         raise Failure(f"timestamp {r['ts']} is not close to the arrival time {r['received']:.0f}")
+
+
+def check_dating(readings: list[dict]) -> None:
+    """A reading goes out without "ts" only while the device's clock is not set yet (the backend then uses the
+    arrival time). Once one dated reading arrived, the clock is set and every later reading must carry its time."""
+    first_dated = next((i for i, r in enumerate(readings) if "ts" in r), None)
+    if first_dated is None:
+        raise Failure("no reading has a timestamp: the device never set its clock")
+    late = [r for r in readings[first_dated:] if "ts" not in r]
+    if late:
+        raise Failure(f"reading without a timestamp after the clock was set: {late[0]}")
 
 
 def main() -> int:
@@ -274,6 +285,7 @@ def main() -> int:
                          and min(run.readings_per_probe().values()) >= 3, 120)
             for r in run.readings:
                 check_reading(r)
+            check_dating(run.readings)
             print(f"  {len(run.readings)} readings, e.g. {json.dumps({k: v for k, v in run.readings[-1].items() if k != 'received'})}")
 
             print(f"2. connection cut for {args.outage:.0f} s")
@@ -304,6 +316,7 @@ def main() -> int:
 
     for r in run.readings:
         check_reading(r)
+    check_dating(run.readings)
     boots = {r["boot"] for r in run.readings}
     if len(boots) != 1:
         raise Failure(f"the device rebooted during the test (boot ids {boots}); see {args.log}")
@@ -311,7 +324,7 @@ def main() -> int:
     missing = sorted(set(range(seqs[0], seqs[-1] + 1)) - set(seqs))
     if missing:
         raise Failure(f"readings lost: seq {missing}")
-    during_outage = [r for r in run.readings if cut_at <= r["ts"] <= restored_at]
+    during_outage = [r for r in run.readings if cut_at <= r.get("ts", 0) <= restored_at]
     if len(during_outage) < expected_backlog - PROBES:
         raise Failure(f"only {len(during_outage)} readings are dated inside the outage, expected about {expected_backlog}")
     duplicates = len(run.readings) - len(seqs)
