@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  firmware:
+    name: Firmware build (ESP-IDF)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32
+          path: firmware
+
+  firmware-tests:
+    name: Firmware logic tests (host, ASan + UBSan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: cmake -S firmware/components/telemetry/test -B build/telemetry-test
+      - run: cmake --build build/telemetry-test
+      - run: ./build/telemetry-test/telemetry_test
+
+  bridge:
+    name: Bridge build and test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bridge
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 25
+          cache: maven
+          cache-dependency-path: bridge/pom.xml
+      # the integration tests start an embedded MQTT broker, no Docker needed
+      - run: ./mvnw -B verify
+
+  bridge-docker:
+    name: Bridge Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: bridge
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
