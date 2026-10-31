@@ -35,6 +35,13 @@ menu "cold-monitor edge"
         int "GPIO of the 1-Wire bus (DS18B20 data line)"
         default 4
 
+    config CM_DS18B20_RESOLUTION
+        int "DS18B20 resolution (bits)"
+        range 9 12
+        default 12
+        help
+            12 bits: steps of 0.0625 °C and 750 ms per conversion. 9 bits: steps of 0.5 °C and 94 ms.
+
     config CM_READ_INTERVAL_S
         int "Seconds between readings"
         range 5 3600

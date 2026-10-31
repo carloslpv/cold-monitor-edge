@@ -20,13 +20,16 @@ jobs:
           path: firmware
 
   firmware-tests:
-    name: Firmware logic tests (host, ASan + UBSan)
+    name: Firmware logic and driver tests (host, ASan + UBSan)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - run: cmake -S firmware/components/telemetry/test -B build/telemetry-test
       - run: cmake --build build/telemetry-test
       - run: ./build/telemetry-test/telemetry_test
+      - run: cmake -S firmware/components/onewire/test -B build/onewire-test
+      - run: cmake --build build/onewire-test
+      - run: ./build/onewire-test/onewire_test
 
   bridge:
     name: Bridge build and test

@@ -7,7 +7,11 @@
 
 void payload_format_probe(char *buf, uint64_t probe)
 {
-    snprintf(buf, 17, "%016" PRIx64, probe);
+    // the ROM code is stored as it comes off the wire, family code in the low byte; print it family first, the way
+    // datasheets and other 1-Wire tools show it
+    for (int i = 0; i < 8; i++) {
+        snprintf(buf + 2 * i, 3, "%02x", (unsigned)((probe >> (8 * i)) & 0xFF));
+    }
 }
 
 int32_t payload_centi_celsius(float celsius)

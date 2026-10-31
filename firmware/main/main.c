@@ -15,7 +15,6 @@
 #include "mqtt_link.h"
 #include "nvs_flash.h"
 #include "outbox.h"
-#include "payload.h"
 #include "probes.h"
 #include "wall_clock.h"
 #include "wifi.h"
@@ -76,13 +75,13 @@ static void measure_task(void *arg)
                 .timestamp = timestamp,
                 .uptime_s = uptime_s,
                 .probe = probes[i].address,
-                .centi_celsius = payload_centi_celsius(probes[i].celsius),
+                .centi_celsius = probes[i].centi_celsius,
             };
-            if (!outbox_push(&outbox, &reading)) {
+            if (!reading_outbox_push(&outbox, &reading)) {
                 ESP_LOGW(TAG, "outbox full, oldest reading dropped (%" PRIu32 " so far)", outbox.dropped);
             }
         }
-        size_t pending = outbox_pending(&outbox);
+        size_t pending = reading_outbox_pending(&outbox);
         xSemaphoreGive(outbox_lock);
 
         ESP_LOGI(TAG, "%u reading(s) taken, %u waiting for delivery", (unsigned)n, (unsigned)pending);
@@ -100,7 +99,7 @@ void app_main(void)
     ESP_LOGI(TAG, "device %s, boot %" PRIu32, device_id, boot_id);
 
     outbox_lock = xSemaphoreCreateMutex();
-    outbox_init(&outbox, outbox_storage, CONFIG_CM_OUTBOX_CAPACITY);
+    reading_outbox_init(&outbox, outbox_storage, CONFIG_CM_OUTBOX_CAPACITY);
     ESP_ERROR_CHECK(probes_init(CONFIG_CM_ONEWIRE_GPIO));
 
     ESP_ERROR_CHECK(esp_netif_init());
@@ -109,7 +108,8 @@ void app_main(void)
 
     // measure from the start, even before Wi-Fi: those readings wait in the outbox, and the ones taken before NTP
     // sets the clock are dated from the uptime when they are sent
-    xTaskCreate(measure_task, "measure", 4096, NULL, 6, NULL);
+    // the 1-Wire bit timing runs with interrupts off on its core, so keep it off core 0, where Wi-Fi runs
+    xTaskCreatePinnedToCore(measure_task, "measure", 4096, NULL, 6, NULL, portNUM_PROCESSORS - 1);
 
     esp_sntp_config_t sntp_config = ESP_NETIF_SNTP_DEFAULT_CONFIG(CONFIG_CM_NTP_SERVER);
     ESP_ERROR_CHECK(esp_netif_sntp_init(&sntp_config));

@@ -31,7 +31,8 @@ The architecture diagram of the whole system, screenshots and the dashboard are 
 
 ### Status
 
-The firmware builds in CI with ESP-IDF 5.4 and its delivery logic is covered by host tests. The bridge is covered by
+The firmware builds in CI with ESP-IDF 5.4, and its delivery logic and its 1-Wire and DS18B20 drivers are covered by
+host tests. The bridge is covered by
 integration tests against an embedded broker and a fake backend, and was run end to end with
 [`tools/fake_device.py`](tools/fake_device.py). A bench test with real probes is the next step.
 
@@ -41,6 +42,9 @@ integration tests against an embedded broker and a fake backend, and was run end
 | --- | --- |
 | [`firmware/`](firmware) | ESP-IDF project in C for the ESP32 |
 | [`firmware/components/telemetry/`](firmware/components/telemetry) | Hardware-free logic (outbox, payload, backoff, config parsing), unit tested on the PC |
+| [`firmware/components/onewire/`](firmware/components/onewire) | 1-Wire bus: ROM search, CRC-8 and the bit timing on a GPIO |
+| [`firmware/components/ds18b20/`](firmware/components/ds18b20) | DS18B20 driver: conversion, resolution, scratchpad checks |
+| [`firmware/components/onewire_sim/`](firmware/components/onewire_sim) | Simulated 1-Wire bus with DS18B20 probes, used by the driver tests |
 | [`bridge/`](bridge) | Java 25 / Spring Boot 4.1 service from MQTT to the backend API |
 | [`mosquitto/`](mosquitto) | Broker configuration with per-device ACL |
 | [`tools/fake_device.py`](tools/fake_device.py) | Publishes like the firmware, for trying everything without hardware |
@@ -90,6 +94,13 @@ remembers the last 10,000 `device/boot/seq` keys it forwarded and drops repeats.
   replaced probe is re-registered in one line (`BRIDGE_PROBES`) without reflashing.
 - **Own outbox in the firmware** rather than relying on the MQTT client's internal queue: it is bounded, its
   overflow policy is explicit, and it is plain C that runs in unit tests on the PC.
+- **Own 1-Wire and DS18B20 drivers** instead of a component from the registry. The protocol part (ROM search,
+  CRC, decoding) is plain C on top of three bit operations (reset, write bit, read bit), so the same code runs on the
+  ESP32 and, in tests, against a simulated bus that answers bit by bit like real probes, including several probes
+  talking at once. On the ESP32 the bits are timed with interrupts off for at most about 70 µs per slot, on the core
+  that does not run Wi-Fi. The driver checks what cheap probes and long cables get wrong: a bad CRC, a line held low
+  (nine zero bytes pass the CRC), and the 85 °C value a probe reports after losing power. The build also needs
+  nothing from the internet besides ESP-IDF itself.
 - **Integers in the payload.** Temperatures travel as hundredths of a degree inside the firmware and are printed with
   integer formatting, so `4.25` is never sent as `4.2499999`.
 - **Paho with manual acks** instead of Spring Integration: the acknowledgement point is the whole point of the
@@ -148,6 +159,10 @@ mosquitto_pub -u admin -P <password> -t coldmonitor/cm-a1b2c3/config -r -q 1 -m 
 cmake -S firmware/components/telemetry/test -B build/telemetry-test
 cmake --build build/telemetry-test && ./build/telemetry-test/telemetry_test
 
+# 1-Wire and DS18B20 drivers against the simulated bus
+cmake -S firmware/components/onewire/test -B build/onewire-test
+cmake --build build/onewire-test && ./build/onewire-test/onewire_test
+
 # bridge: unit and integration tests (embedded MQTT broker, fake backend over real HTTP)
 cd bridge && ./mvnw verify
 ```
@@ -178,7 +193,8 @@ O diagrama acima vale para as duas línguas. A visão geral do sistema, os scree
 
 ### Situação
 
-O firmware compila no CI com ESP-IDF 5.4, e a lógica de entrega é coberta por testes que rodam no PC. A ponte tem
+O firmware compila no CI com ESP-IDF 5.4, e a lógica de entrega e os drivers de 1-Wire e DS18B20 são cobertos por
+testes que rodam no PC. A ponte tem
 testes de integração com um broker embutido e um backend falso, e foi rodada de ponta a ponta com o
 [`tools/fake_device.py`](tools/fake_device.py). O próximo passo é o teste de bancada com sondas reais.
 
@@ -188,6 +204,9 @@ testes de integração com um broker embutido e um backend falso, e foi rodada d
 | --- | --- |
 | [`firmware/`](firmware) | Projeto ESP-IDF em C para o ESP32 |
 | [`firmware/components/telemetry/`](firmware/components/telemetry) | Lógica sem hardware (outbox, payload, backoff, leitura de config), com testes no PC |
+| [`firmware/components/onewire/`](firmware/components/onewire) | Barramento 1-Wire: busca de ROM, CRC-8 e a temporização dos bits num GPIO |
+| [`firmware/components/ds18b20/`](firmware/components/ds18b20) | Driver do DS18B20: conversão, resolução, conferência do scratchpad |
+| [`firmware/components/onewire_sim/`](firmware/components/onewire_sim) | Barramento 1-Wire simulado com sondas DS18B20, usado nos testes dos drivers |
 | [`bridge/`](bridge) | Serviço Java 25 / Spring Boot 4.1 do MQTT para a API do backend |
 | [`mosquitto/`](mosquitto) | Configuração do broker com ACL por dispositivo |
 | [`tools/fake_device.py`](tools/fake_device.py) | Publica como o firmware, para testar tudo sem hardware |
@@ -237,6 +256,13 @@ ponte lembra as últimas 10 mil chaves `device/boot/seq` que encaminhou e descar
   dois freezers, e uma sonda trocada é recadastrada em uma linha (`BRIDGE_PROBES`), sem regravar o firmware.
 - **Outbox própria no firmware**, em vez de depender da fila interna do cliente MQTT: ela tem tamanho fixo, a regra
   de estouro é explícita, e é C puro que roda em teste unitário no PC.
+- **Drivers próprios de 1-Wire e DS18B20** em vez de um componente do registro. A parte de protocolo (busca de ROM,
+  CRC, decodificação) é C puro em cima de três operações de bit (reset, escrever bit, ler bit), então o mesmo código
+  roda no ESP32 e, nos testes, contra um barramento simulado que responde bit a bit como sondas reais, inclusive
+  várias sondas falando ao mesmo tempo. No ESP32 os bits são temporizados com interrupções desligadas por no máximo
+  uns 70 µs por slot, no núcleo que não roda o Wi-Fi. O driver confere o que sonda barata e cabo comprido costumam
+  errar: CRC inválido, linha presa em nível baixo (nove bytes zero passam no CRC) e o valor de 85 °C que a sonda
+  informa depois de perder alimentação. E a compilação não precisa baixar nada da internet além do próprio ESP-IDF.
 - **Inteiros no payload.** Dentro do firmware a temperatura anda em centésimos de grau e é impressa com formatação de
   inteiro, então `4.25` nunca sai como `4.2499999`.
 - **Paho com ack manual** em vez de Spring Integration: o momento da confirmação é a razão de existir da ponte, e
@@ -294,6 +320,10 @@ mosquitto_pub -u admin -P <senha> -t coldmonitor/cm-a1b2c3/config -r -q 1 -m '{"
 # lógica do firmware no PC, com AddressSanitizer e UBSan
 cmake -S firmware/components/telemetry/test -B build/telemetry-test
 cmake --build build/telemetry-test && ./build/telemetry-test/telemetry_test
+
+# drivers de 1-Wire e DS18B20 contra o barramento simulado
+cmake -S firmware/components/onewire/test -B build/onewire-test
+cmake --build build/onewire-test && ./build/onewire-test/onewire_test
 
 # ponte: testes unitários e de integração (broker MQTT embutido, backend falso por HTTP de verdade)
 cd bridge && ./mvnw verify

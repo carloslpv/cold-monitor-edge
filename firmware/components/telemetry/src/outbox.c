@@ -15,7 +15,7 @@ static void drop_acked_head(outbox_t *outbox)
     }
 }
 
-void outbox_init(outbox_t *outbox, outbox_entry_t *storage, size_t capacity)
+void reading_outbox_init(outbox_t *outbox, outbox_entry_t *storage, size_t capacity)
 {
     memset(storage, 0, capacity * sizeof(*storage));
     outbox->entries = storage;
@@ -25,7 +25,7 @@ void outbox_init(outbox_t *outbox, outbox_entry_t *storage, size_t capacity)
     outbox->dropped = 0;
 }
 
-bool outbox_push(outbox_t *outbox, const reading_t *reading)
+bool reading_outbox_push(outbox_t *outbox, const reading_t *reading)
 {
     bool kept_all = true;
     if (outbox->count == outbox->capacity) {
@@ -44,7 +44,7 @@ bool outbox_push(outbox_t *outbox, const reading_t *reading)
     return kept_all;
 }
 
-outbox_entry_t *outbox_next_unsent(outbox_t *outbox)
+outbox_entry_t *reading_outbox_next_unsent(outbox_t *outbox)
 {
     for (size_t i = 0; i < outbox->count; i++) {
         outbox_entry_t *entry = at(outbox, i);
@@ -55,12 +55,12 @@ outbox_entry_t *outbox_next_unsent(outbox_t *outbox)
     return NULL;
 }
 
-void outbox_mark_sent(outbox_entry_t *entry, int msg_id)
+void reading_outbox_mark_sent(outbox_entry_t *entry, int msg_id)
 {
     entry->msg_id = msg_id;
 }
 
-bool outbox_ack(outbox_t *outbox, int msg_id)
+bool reading_outbox_ack(outbox_t *outbox, int msg_id)
 {
     if (msg_id <= 0) {
         return false;
@@ -76,7 +76,7 @@ bool outbox_ack(outbox_t *outbox, int msg_id)
     return false;
 }
 
-void outbox_requeue_inflight(outbox_t *outbox)
+void reading_outbox_requeue_inflight(outbox_t *outbox)
 {
     for (size_t i = 0; i < outbox->count; i++) {
         outbox_entry_t *entry = at(outbox, i);
@@ -86,7 +86,7 @@ void outbox_requeue_inflight(outbox_t *outbox)
     }
 }
 
-size_t outbox_inflight(const outbox_t *outbox)
+size_t reading_outbox_inflight(const outbox_t *outbox)
 {
     size_t inflight = 0;
     for (size_t i = 0; i < outbox->count; i++) {
@@ -97,7 +97,7 @@ size_t outbox_inflight(const outbox_t *outbox)
     return inflight;
 }
 
-size_t outbox_pending(const outbox_t *outbox)
+size_t reading_outbox_pending(const outbox_t *outbox)
 {
     size_t pending = 0;
     for (size_t i = 0; i < outbox->count; i++) {

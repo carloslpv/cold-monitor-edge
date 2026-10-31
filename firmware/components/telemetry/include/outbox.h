@@ -42,41 +42,41 @@ typedef struct {
     uint32_t dropped; /*!< Readings overwritten because the buffer was full */
 } outbox_t;
 
-void outbox_init(outbox_t *outbox, outbox_entry_t *storage, size_t capacity);
+void reading_outbox_init(outbox_t *outbox, outbox_entry_t *storage, size_t capacity);
 
 /**
  * Adds a reading. Returns false when the buffer was full and the oldest reading was overwritten.
  */
-bool outbox_push(outbox_t *outbox, const reading_t *reading);
+bool reading_outbox_push(outbox_t *outbox, const reading_t *reading);
 
 /**
  * Oldest reading not published yet, or NULL when every reading is in flight or acknowledged.
  */
-outbox_entry_t *outbox_next_unsent(outbox_t *outbox);
+outbox_entry_t *reading_outbox_next_unsent(outbox_t *outbox);
 
 /**
- * Marks an entry returned by outbox_next_unsent() as published with the given MQTT message id.
+ * Marks an entry returned by reading_outbox_next_unsent() as published with the given MQTT message id.
  */
-void outbox_mark_sent(outbox_entry_t *entry, int msg_id);
+void reading_outbox_mark_sent(outbox_entry_t *entry, int msg_id);
 
 /**
  * Handles a PUBACK. Acknowledgements may arrive out of order. Returns false for an unknown message id, for example
  * one whose reading was overwritten in the meantime.
  */
-bool outbox_ack(outbox_t *outbox, int msg_id);
+bool reading_outbox_ack(outbox_t *outbox, int msg_id);
 
 /**
  * Puts every in-flight reading back in the queue, used when the connection drops before the PUBACK arrives. The
  * readings are sent again, so the receiver must tolerate duplicates (at-least-once delivery).
  */
-void outbox_requeue_inflight(outbox_t *outbox);
+void reading_outbox_requeue_inflight(outbox_t *outbox);
 
-size_t outbox_inflight(const outbox_t *outbox);
+size_t reading_outbox_inflight(const outbox_t *outbox);
 
 /**
  * Readings still waiting for delivery (unsent and in flight).
  */
-size_t outbox_pending(const outbox_t *outbox);
+size_t reading_outbox_pending(const outbox_t *outbox);
 
 #ifdef __cplusplus
 }

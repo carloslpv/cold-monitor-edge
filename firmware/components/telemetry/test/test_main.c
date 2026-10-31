@@ -19,7 +19,8 @@ static int failures;
 
 static reading_t reading(uint32_t seq)
 {
-    reading_t r = { .seq = seq, .timestamp = 1761868800, .probe = 0x28ff4a1c0b160351ULL, .centi_celsius = 425 };
+    // family code 0x28 in the low byte, as read off the wire
+    reading_t r = { .seq = seq, .timestamp = 1761868800, .probe = 0x5103160b1c4aff28ULL, .centi_celsius = 425 };
     return r;
 }
 
@@ -27,79 +28,79 @@ static void test_outbox_keeps_readings_until_acked(void)
 {
     outbox_entry_t storage[4];
     outbox_t outbox;
-    outbox_init(&outbox, storage, 4);
+    reading_outbox_init(&outbox, storage, 4);
 
     reading_t r1 = reading(1), r2 = reading(2);
-    CHECK(outbox_push(&outbox, &r1));
-    CHECK(outbox_push(&outbox, &r2));
+    CHECK(reading_outbox_push(&outbox, &r1));
+    CHECK(reading_outbox_push(&outbox, &r2));
 
-    outbox_entry_t *first = outbox_next_unsent(&outbox);
+    outbox_entry_t *first = reading_outbox_next_unsent(&outbox);
     CHECK(first != NULL && first->reading.seq == 1);
-    outbox_mark_sent(first, 10);
-    outbox_entry_t *second = outbox_next_unsent(&outbox);
+    reading_outbox_mark_sent(first, 10);
+    outbox_entry_t *second = reading_outbox_next_unsent(&outbox);
     CHECK(second != NULL && second->reading.seq == 2);
-    outbox_mark_sent(second, 11);
-    CHECK(outbox_next_unsent(&outbox) == NULL);
-    CHECK(outbox_inflight(&outbox) == 2);
+    reading_outbox_mark_sent(second, 11);
+    CHECK(reading_outbox_next_unsent(&outbox) == NULL);
+    CHECK(reading_outbox_inflight(&outbox) == 2);
 
     // PUBACKs out of order: the second one first
-    CHECK(outbox_ack(&outbox, 11));
-    CHECK(outbox_pending(&outbox) == 1);
-    CHECK(outbox_ack(&outbox, 10));
-    CHECK(outbox_pending(&outbox) == 0);
+    CHECK(reading_outbox_ack(&outbox, 11));
+    CHECK(reading_outbox_pending(&outbox) == 1);
+    CHECK(reading_outbox_ack(&outbox, 10));
+    CHECK(reading_outbox_pending(&outbox) == 0);
     CHECK(outbox.count == 0);
-    CHECK(!outbox_ack(&outbox, 10));
+    CHECK(!reading_outbox_ack(&outbox, 10));
 }
 
 static void test_outbox_requeues_inflight_on_disconnect(void)
 {
     outbox_entry_t storage[4];
     outbox_t outbox;
-    outbox_init(&outbox, storage, 4);
+    reading_outbox_init(&outbox, storage, 4);
     reading_t r1 = reading(1);
-    outbox_push(&outbox, &r1);
-    outbox_mark_sent(outbox_next_unsent(&outbox), 7);
+    reading_outbox_push(&outbox, &r1);
+    reading_outbox_mark_sent(reading_outbox_next_unsent(&outbox), 7);
 
-    outbox_requeue_inflight(&outbox);
+    reading_outbox_requeue_inflight(&outbox);
 
-    CHECK(outbox_inflight(&outbox) == 0);
-    outbox_entry_t *again = outbox_next_unsent(&outbox);
+    CHECK(reading_outbox_inflight(&outbox) == 0);
+    outbox_entry_t *again = reading_outbox_next_unsent(&outbox);
     CHECK(again != NULL && again->reading.seq == 1);
-    CHECK(!outbox_ack(&outbox, 7)); // a late PUBACK of the old attempt no longer matches
+    CHECK(!reading_outbox_ack(&outbox, 7)); // a late PUBACK of the old attempt no longer matches
 }
 
 static void test_outbox_overwrites_oldest_when_full(void)
 {
     outbox_entry_t storage[3];
     outbox_t outbox;
-    outbox_init(&outbox, storage, 3);
+    reading_outbox_init(&outbox, storage, 3);
     for (uint32_t seq = 1; seq <= 3; seq++) {
         reading_t r = reading(seq);
-        CHECK(outbox_push(&outbox, &r));
+        CHECK(reading_outbox_push(&outbox, &r));
     }
     reading_t r4 = reading(4);
-    CHECK(!outbox_push(&outbox, &r4));
+    CHECK(!reading_outbox_push(&outbox, &r4));
     CHECK(outbox.dropped == 1);
-    CHECK(outbox_pending(&outbox) == 3);
-    CHECK(outbox_next_unsent(&outbox)->reading.seq == 2);
+    CHECK(reading_outbox_pending(&outbox) == 3);
+    CHECK(reading_outbox_next_unsent(&outbox)->reading.seq == 2);
 }
 
 static void test_outbox_overwriting_inflight_reading_counts_as_dropped(void)
 {
     outbox_entry_t storage[2];
     outbox_t outbox;
-    outbox_init(&outbox, storage, 2);
+    reading_outbox_init(&outbox, storage, 2);
     reading_t r1 = reading(1), r2 = reading(2), r3 = reading(3);
-    outbox_push(&outbox, &r1);
-    outbox_push(&outbox, &r2);
-    outbox_mark_sent(outbox_next_unsent(&outbox), 1);
-    outbox_mark_sent(outbox_next_unsent(&outbox), 2);
-    CHECK(outbox_ack(&outbox, 2)); // acked but still behind the head
+    reading_outbox_push(&outbox, &r1);
+    reading_outbox_push(&outbox, &r2);
+    reading_outbox_mark_sent(reading_outbox_next_unsent(&outbox), 1);
+    reading_outbox_mark_sent(reading_outbox_next_unsent(&outbox), 2);
+    CHECK(reading_outbox_ack(&outbox, 2)); // acked but still behind the head
 
-    CHECK(!outbox_push(&outbox, &r3)); // the oldest (seq 1) is still in flight, so it is lost
+    CHECK(!reading_outbox_push(&outbox, &r3)); // the oldest (seq 1) is still in flight, so it is lost
     CHECK(outbox.dropped == 1);
-    CHECK(outbox_pending(&outbox) == 1);
-    CHECK(!outbox_ack(&outbox, 1)); // its late PUBACK finds nothing
+    CHECK(reading_outbox_pending(&outbox) == 1);
+    CHECK(!reading_outbox_ack(&outbox, 1)); // its late PUBACK finds nothing
 }
 
 static void test_payload(void)
