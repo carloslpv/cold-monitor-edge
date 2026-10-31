@@ -1,0 +1,19 @@
+.env
+mosquitto/passwd
+
+# ESP-IDF
+firmware/build/
+firmware/managed_components/
+firmware/dependencies.lock
+firmware/sdkconfig
+firmware/sdkconfig.old
+
+# host build of the firmware tests
+build/
+
+# bridge
+bridge/target/
+.idea/
+*.iml
+.vscode/
+__pycache__/
