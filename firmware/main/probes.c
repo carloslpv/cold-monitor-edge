@@ -4,14 +4,16 @@
 
 #include "ds18b20.h"
 #include "esp_log.h"
+#include "esp_random.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "onewire_gpio.h"
+#include "onewire_sim.h"
 #include "sdkconfig.h"
 
 static const char *TAG = "probes";
 
-static onewire_gpio_t gpio_bus;
 static onewire_bus_t bus;
 static onewire_rom_t roms[PROBES_MAX];
 static size_t probe_count;
@@ -32,10 +34,43 @@ static const char *status_text(ds18b20_status_t status)
     return "unknown";
 }
 
+#if CONFIG_CM_SIMULATED_PROBES
+
+static onewire_sim_t sim;
+
+/** Setpoint plus a slow compressor cycle and some noise, in 1/16 °C, updated on every conversion. */
+static void simulate(onewire_sim_device_t *device, void *arg)
+{
+    int setpoint = (int)(intptr_t)arg;
+    int phase = (int)((esp_timer_get_time() / 1000000) % 600); // 10-minute triangle wave
+    int cycle = phase < 300 ? phase : 600 - phase;
+    int noise = (int)(esp_random() % 5) - 2;
+    onewire_sim_set_raw(device, (int16_t)(setpoint + (cycle - 150) / 10 + noise));
+}
+
+esp_err_t probes_init(int gpio)
+{
+    onewire_sim_init(&sim, &bus);
+    onewire_sim_device_t *fridge = onewire_sim_add_ds18b20(&sim, 0x000000000001, 5 * 16);
+    onewire_sim_device_t *freezer = onewire_sim_add_ds18b20(&sim, 0x000000000002, -25 * 16);
+    fridge->on_convert = simulate;
+    fridge->on_convert_arg = (void *)(intptr_t)(5 * 16);
+    freezer->on_convert = simulate;
+    freezer->on_convert_arg = (void *)(intptr_t)(-25 * 16);
+    ESP_LOGW(TAG, "simulated probes, GPIO %d is not used", gpio);
+    return ESP_OK;
+}
+
+#else
+
+static onewire_gpio_t gpio_bus;
+
 esp_err_t probes_init(int gpio)
 {
     return onewire_gpio_init(&gpio_bus, (gpio_num_t)gpio, &bus);
 }
+
+#endif
 
 static void search(void)
 {

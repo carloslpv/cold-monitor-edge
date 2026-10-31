@@ -1,0 +1,13 @@
+# Emulator build, layered on top of sdkconfig.defaults:
+#   idf.py -B build-qemu -D SDKCONFIG=build-qemu/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.qemu" build
+# QEMU's user networking puts the host at 10.0.2.2, where test/qemu/e2e.py serves NTP and the MQTT broker.
+CONFIG_CM_NETWORK_QEMU=y
+CONFIG_CM_SIMULATED_PROBES=y
+CONFIG_CM_DEVICE_ID="cm-qemu"
+CONFIG_CM_MQTT_BROKER_URI="mqtt://10.0.2.2:1883"
+# only ever used against the throwaway broker of the end-to-end test
+CONFIG_CM_MQTT_PASSWORD="qemu-only"
+CONFIG_CM_NTP_SERVER="10.0.2.2"
+CONFIG_CM_READ_INTERVAL_S=5
+# a real fleet spreads its first NTP requests over a few seconds; the single emulated device asks right away
+CONFIG_LWIP_SNTP_STARTUP_DELAY=n

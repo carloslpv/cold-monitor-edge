@@ -31,8 +31,9 @@ The architecture diagram of the whole system, screenshots and the dashboard are 
 
 ### Status
 
-The firmware builds in CI with ESP-IDF 5.4, and its delivery logic and its 1-Wire and DS18B20 drivers are covered by
-host tests. The bridge is covered by
+The firmware builds in CI with ESP-IDF 5.4. Its delivery logic and its 1-Wire and DS18B20 drivers are covered by
+host tests, and on every push the real firmware runs in the QEMU emulator against the repository's Mosquitto
+config, with the connection cut for 30 seconds in the middle (see [Tests](#tests)). The bridge is covered by
 integration tests against an embedded broker and a fake backend, and was run end to end with
 [`tools/fake_device.py`](tools/fake_device.py). A bench test with real probes is the next step.
 
@@ -44,7 +45,8 @@ integration tests against an embedded broker and a fake backend, and was run end
 | [`firmware/components/telemetry/`](firmware/components/telemetry) | Hardware-free logic (outbox, payload, backoff, config parsing), unit tested on the PC |
 | [`firmware/components/onewire/`](firmware/components/onewire) | 1-Wire bus: ROM search, CRC-8 and the bit timing on a GPIO |
 | [`firmware/components/ds18b20/`](firmware/components/ds18b20) | DS18B20 driver: conversion, resolution, scratchpad checks |
-| [`firmware/components/onewire_sim/`](firmware/components/onewire_sim) | Simulated 1-Wire bus with DS18B20 probes, used by the driver tests |
+| [`firmware/components/onewire_sim/`](firmware/components/onewire_sim) | Simulated 1-Wire bus with DS18B20 probes, used by the driver tests and the emulator build |
+| [`firmware/test/qemu/`](firmware/test/qemu) | End-to-end test of the firmware running in QEMU |
 | [`bridge/`](bridge) | Java 25 / Spring Boot 4.1 service from MQTT to the backend API |
 | [`mosquitto/`](mosquitto) | Broker configuration with per-device ACL |
 | [`tools/fake_device.py`](tools/fake_device.py) | Publishes like the firmware, for trying everything without hardware |
@@ -146,6 +148,17 @@ pip install paho-mqtt
 python tools/fake_device.py --device cm-test --password <password> --probe 28ff4a1c0b160351
 ```
 
+Or run the real firmware in the emulator, with two simulated probes (a fridge around 5 °C, a freezer around
+-25 °C) and emulated Ethernet instead of Wi-Fi: build it with `sdkconfig.qemu` on top of the defaults and start
+`idf.py qemu`. It connects to the broker at 10.0.2.2:1883 (the host, seen from inside QEMU) as `cm-qemu`, and expects
+an NTP server at the same address; the end-to-end test below provides both.
+
+```bash
+cd firmware
+idf.py -B build-qemu -D SDKCONFIG=build-qemu/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.qemu" build
+idf.py -B build-qemu qemu
+```
+
 Change the reading interval of a device at run time:
 
 ```bash
@@ -167,7 +180,26 @@ cmake --build build/onewire-test && ./build/onewire-test/onewire_test
 cd bridge && ./mvnw verify
 ```
 
-GitHub Actions builds the firmware with Espressif's ESP-IDF image, runs both test suites and builds the bridge image.
+**End to end in QEMU.** [`firmware/test/qemu/e2e.py`](firmware/test/qemu/e2e.py) (standard library only) starts
+the emulator and plays the rest of the world: an SNTP server, a TCP proxy in front of a real Mosquitto running this
+repository's config and ACL, and an MQTT subscriber. It checks that readings arrive with sane values and timestamps,
+cuts the connection for 30 seconds, checks that the broker publishes the device's last will (`offline`), restores
+the connection and checks that every reading taken meanwhile is delivered with the time it was taken, with no gap
+in `seq`:
+
+```
+1. device boots, sets its clock and publishes
+2. connection cut for 30 s
+  status: offline
+3. connection restored
+  status: online
+4. ok: seq 1..24 with no gaps, 12 readings taken during the outage delivered afterwards with their own timestamps, 0 duplicate(s)
+```
+
+The `firmware-e2e` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) shows how to run it with Docker.
+
+GitHub Actions builds the firmware with Espressif's ESP-IDF image, runs the test suites, runs the end-to-end test
+and builds the bridge image.
 
 ### Next steps
 
@@ -193,9 +225,10 @@ O diagrama acima vale para as duas línguas. A visão geral do sistema, os scree
 
 ### Situação
 
-O firmware compila no CI com ESP-IDF 5.4, e a lógica de entrega e os drivers de 1-Wire e DS18B20 são cobertos por
-testes que rodam no PC. A ponte tem
-testes de integração com um broker embutido e um backend falso, e foi rodada de ponta a ponta com o
+O firmware compila no CI com ESP-IDF 5.4. A lógica de entrega e os drivers de 1-Wire e DS18B20 são cobertos por
+testes que rodam no PC, e a cada push o firmware de verdade roda no emulador QEMU contra a configuração de Mosquitto
+do repositório, com a conexão cortada por 30 segundos no meio (veja [Testes](#testes)). A ponte tem testes de
+integração com um broker embutido e um backend falso, e foi rodada de ponta a ponta com o
 [`tools/fake_device.py`](tools/fake_device.py). O próximo passo é o teste de bancada com sondas reais.
 
 ### Estrutura
@@ -206,7 +239,8 @@ testes de integração com um broker embutido e um backend falso, e foi rodada d
 | [`firmware/components/telemetry/`](firmware/components/telemetry) | Lógica sem hardware (outbox, payload, backoff, leitura de config), com testes no PC |
 | [`firmware/components/onewire/`](firmware/components/onewire) | Barramento 1-Wire: busca de ROM, CRC-8 e a temporização dos bits num GPIO |
 | [`firmware/components/ds18b20/`](firmware/components/ds18b20) | Driver do DS18B20: conversão, resolução, conferência do scratchpad |
-| [`firmware/components/onewire_sim/`](firmware/components/onewire_sim) | Barramento 1-Wire simulado com sondas DS18B20, usado nos testes dos drivers |
+| [`firmware/components/onewire_sim/`](firmware/components/onewire_sim) | Barramento 1-Wire simulado com sondas DS18B20, usado nos testes dos drivers e no build do emulador |
+| [`firmware/test/qemu/`](firmware/test/qemu) | Teste de ponta a ponta do firmware rodando no QEMU |
 | [`bridge/`](bridge) | Serviço Java 25 / Spring Boot 4.1 do MQTT para a API do backend |
 | [`mosquitto/`](mosquitto) | Configuração do broker com ACL por dispositivo |
 | [`tools/fake_device.py`](tools/fake_device.py) | Publica como o firmware, para testar tudo sem hardware |
@@ -308,6 +342,17 @@ pip install paho-mqtt
 python tools/fake_device.py --device cm-test --password <senha> --probe 28ff4a1c0b160351
 ```
 
+Ou rode o firmware de verdade no emulador, com duas sondas simuladas (uma geladeira perto de 5 °C e um freezer perto
+de -25 °C) e Ethernet emulada no lugar do Wi-Fi: compile com o `sdkconfig.qemu` por cima dos padrões e rode
+`idf.py qemu`. Ele se conecta ao broker em 10.0.2.2:1883 (o host, visto de dentro do QEMU) como `cm-qemu` e espera um
+servidor NTP no mesmo endereço; o teste de ponta a ponta abaixo fornece os dois.
+
+```bash
+cd firmware
+idf.py -B build-qemu -D SDKCONFIG=build-qemu/sdkconfig -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.qemu" build
+idf.py -B build-qemu qemu
+```
+
 Para mudar o intervalo de leitura de um dispositivo com ele rodando:
 
 ```bash
@@ -329,8 +374,16 @@ cmake --build build/onewire-test && ./build/onewire-test/onewire_test
 cd bridge && ./mvnw verify
 ```
 
-O GitHub Actions compila o firmware com a imagem ESP-IDF da Espressif, roda as duas suítes de teste e gera a imagem
-da ponte.
+**De ponta a ponta no QEMU.** O [`firmware/test/qemu/e2e.py`](firmware/test/qemu/e2e.py) (só biblioteca padrão)
+sobe o emulador e faz o papel do resto do mundo: um servidor SNTP, um proxy TCP na frente de um Mosquitto de verdade
+com a configuração e a ACL deste repositório, e um assinante MQTT. Ele confere que as leituras chegam com valores e
+horários coerentes, corta a conexão por 30 segundos, confere que o broker publica o last will do dispositivo
+(`offline`), restaura a conexão e confere que toda leitura feita nesse meio-tempo é entregue com o horário em que foi
+feita, sem buraco no `seq`. O job `firmware-e2e` do [`.github/workflows/ci.yml`](.github/workflows/ci.yml) mostra
+como rodar com Docker.
+
+O GitHub Actions compila o firmware com a imagem ESP-IDF da Espressif, roda as suítes de teste, roda o teste de ponta
+a ponta e gera a imagem da ponte.
 
 ### Próximos passos
 
