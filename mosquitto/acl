@@ -1,0 +1,14 @@
+# The bridge reads everything the devices publish.
+user bridge
+topic read coldmonitor/+/readings
+topic read coldmonitor/+/status
+
+# An operator account that can change device settings (retained config messages).
+user admin
+topic readwrite coldmonitor/#
+
+# Every other user is a device whose user name is its device id (%u): it can only publish its own readings and
+# status and read its own config, so a stolen device password cannot fake readings for another freezer.
+pattern write coldmonitor/%u/readings
+pattern write coldmonitor/%u/status
+pattern read coldmonitor/%u/config

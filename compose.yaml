@@ -1,0 +1,31 @@
+# Broker and bridge. The cold-monitor backend runs elsewhere (cold-monitor-infra or ./mvnw spring-boot:run in
+# cold-monitor-backend); BACKEND_URL points to it. Settings come from .env, see .env.example.
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto:/mosquitto/config
+      - mosquitto-data:/mosquitto/data
+
+  bridge:
+    build: ./bridge
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    environment:
+      MQTT_URI: tcp://mosquitto:1883
+      MQTT_USERNAME: bridge
+      MQTT_PASSWORD: ${MQTT_BRIDGE_PASSWORD:?set MQTT_BRIDGE_PASSWORD in .env}
+      BACKEND_URL: ${BACKEND_URL:-http://host.docker.internal:8080}
+      BACKEND_API_KEY: ${BACKEND_API_KEY:?set BACKEND_API_KEY in .env}
+      BRIDGE_PROBES: ${BRIDGE_PROBES:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "8081:8081"
+
+volumes:
+  mosquitto-data:
