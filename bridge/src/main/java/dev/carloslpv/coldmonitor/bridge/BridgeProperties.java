@@ -13,7 +13,10 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
 import org.springframework.util.StringUtils;
 
 /**
- * @param mqtt broker connection
+ * @param source how readings reach the bridge: {@code mqtt} subscribes to the MQTT broker (Mosquitto), {@code amqp}
+ * consumes a queue of RabbitMQ, which receives the devices' MQTT through its MQTT plugin
+ * @param mqtt MQTT broker connection, and the topic prefix shared with the firmware
+ * @param amqp RabbitMQ connection and queues, used when the source is {@code amqp}
  * @param backend cold-monitor backend that receives the readings
  * @param probes which equipment each probe measures, as {@code <probe ROM code>=<equipment id>} entries; a reading
  * from a probe that is not listed is dropped and counted, so a new probe is registered here before it goes live
@@ -22,7 +25,9 @@ import org.springframework.util.StringUtils;
  */
 @ConfigurationProperties("cold-monitor.bridge")
 public record BridgeProperties(
+		@DefaultValue("mqtt") Source source,
 		@DefaultValue Mqtt mqtt,
+		@DefaultValue Amqp amqp,
 		@DefaultValue Backend backend,
 		@DefaultValue List<String> probes,
 		@DefaultValue Retry retry,
@@ -70,6 +75,27 @@ public record BridgeProperties(
 			String username,
 			String password,
 			@DefaultValue("coldmonitor") String topicPrefix) {
+	}
+
+	public enum Source {
+
+		MQTT, AMQP
+
+	}
+
+	/**
+	 * @param uri RabbitMQ URI, {@code amqp://host:port/vhost} or {@code amqps://...}
+	 * @param username RabbitMQ user
+	 * @param password RabbitMQ password
+	 * @param queue durable quorum queue the bridge consumes, bound to the readings and status of every device
+	 * @param deadLetterQueue where readings that cannot be forwarded end up, to be inspected and replayed
+	 */
+	public record Amqp(
+			@DefaultValue("amqp://localhost:5672") URI uri,
+			@DefaultValue("bridge") String username,
+			String password,
+			@DefaultValue("coldmonitor.bridge") String queue,
+			@DefaultValue("coldmonitor.bridge.dead") String deadLetterQueue) {
 	}
 
 	/**
