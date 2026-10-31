@@ -26,6 +26,10 @@ flowchart LR
     BR -- "HTTP POST + X-API-Key" --> API[cold-monitor-backend]
 ```
 
+The broker can also be **RabbitMQ**, with the same firmware: its MQTT plugin takes the devices' messages, and the
+bridge consumes a durable queue over **AMQP**, with a dead-letter queue for what it cannot forward (see
+[With RabbitMQ](#with-rabbitmq)).
+
 The architecture diagram of the whole system, screenshots and the dashboard are in
 [cold-monitor-infra](https://github.com/carloslpv/cold-monitor-infra).
 
@@ -33,8 +37,9 @@ The architecture diagram of the whole system, screenshots and the dashboard are 
 
 The firmware builds in CI with ESP-IDF 5.4. Its delivery logic and its 1-Wire and DS18B20 drivers are covered by
 host tests, and on every push the real firmware runs in the QEMU emulator against the repository's Mosquitto
-config, with the connection cut for 30 seconds in the middle (see [Tests](#tests)). The bridge is covered by
-integration tests against an embedded broker and a fake backend, and was run end to end with
+config and against the RabbitMQ one, with the connection cut for 30 seconds in the middle (see [Tests](#tests)).
+The bridge is covered by integration tests against an embedded MQTT broker, a RabbitMQ container and a fake backend,
+and was run end to end with
 [`tools/fake_device.py`](tools/fake_device.py). A bench test with real probes is the next step.
 
 ### Repository layout
@@ -47,8 +52,9 @@ integration tests against an embedded broker and a fake backend, and was run end
 | [`firmware/components/ds18b20/`](firmware/components/ds18b20) | DS18B20 driver: conversion, resolution, scratchpad checks |
 | [`firmware/components/onewire_sim/`](firmware/components/onewire_sim) | Simulated 1-Wire bus with DS18B20 probes, used by the driver tests and the emulator build |
 | [`firmware/test/qemu/`](firmware/test/qemu) | End-to-end test of the firmware running in QEMU |
-| [`bridge/`](bridge) | Java 25 / Spring Boot 4.1 service from MQTT to the backend API |
+| [`bridge/`](bridge) | Java 25 / Spring Boot 4.1 service from MQTT or AMQP to the backend API |
 | [`mosquitto/`](mosquitto) | Broker configuration with per-device ACL |
+| [`rabbitmq/`](rabbitmq), [`compose.rabbitmq.yaml`](compose.rabbitmq.yaml) | The same setup with RabbitMQ: config, plugins, and a script that creates users with the same per-device rights |
 | [`tools/fake_device.py`](tools/fake_device.py) | Publishes like the firmware, for trying everything without hardware |
 
 ### MQTT topics
@@ -87,6 +93,49 @@ the broker delivers it again after the restart.
 
 At-least-once delivery means duplicates are possible: the firmware resends what was not acknowledged. The bridge
 remembers the last 10,000 `device/boot/seq` keys it forwarded and drops repeats.
+
+### With RabbitMQ
+
+```mermaid
+flowchart LR
+    ESP[ESP32 firmware] -- "MQTT QoS 1<br/>coldmonitor/{id}/readings" --> MQ[RabbitMQ<br/>MQTT plugin]
+    MQ -- "amq.topic<br/>coldmonitor.{id}.readings" --> Q[(coldmonitor.bridge<br/>quorum queue)]
+    Q -- "AMQP, prefetch 1, manual ack" --> BR[bridge]
+    BR -- "HTTP POST" --> API[cold-monitor-backend]
+    BR -. "reject" .-> DLQ[(coldmonitor.bridge.dead)]
+```
+
+The firmware does not change: it still speaks MQTT, now to RabbitMQ's MQTT plugin, which publishes every message
+to the `amq.topic` exchange with the topic's slashes turned into dots. With `BRIDGE_SOURCE=amqp` the bridge declares
+a durable quorum queue bound to `coldmonitor.*.readings` and `coldmonitor.*.status` and consumes it with manual
+acknowledgements and a prefetch of one, so the guarantees are those of the MQTT path: a message is acknowledged
+only after the backend took it, and while the backend is down the backlog waits in the queue, in order. What the
+MQTT path can only log and drop (an unregistered probe, a reading the backend rejects, a malformed message) is
+rejected instead and lands in the `coldmonitor.bridge.dead` queue, where it waits to be looked at (management UI,
+"Get messages") instead of being lost.
+
+RabbitMQ closes a channel whose message stays unacknowledged longer than its consumer timeout (30 minutes by
+default), which happens when the backend is down that long; the message goes back to the queue and the bridge opens
+a new channel and carries on.
+
+The rights match the Mosquitto ACL: [`rabbitmq/users.sh`](rabbitmq/users.sh) gives each device topic permissions
+on `amq.topic` limited to `coldmonitor.<its user name>.(readings|status)` for writing and its own `config` for
+reading. A device that publishes under another device's id is disconnected, and a subscription to another device's
+config is refused. The bridge can only touch its own queues and exchange.
+
+```bash
+cp .env.example .env    # RABBITMQ_ADMIN_PASSWORD, AMQP_BRIDGE_PASSWORD, the backend URL and key, the probes
+docker compose -f compose.rabbitmq.yaml up -d rabbitmq
+./rabbitmq/users.sh bridge              # asks for the password, the same as AMQP_BRIDGE_PASSWORD
+./rabbitmq/users.sh device cm-a1b2c3    # one user per device, named after its id
+docker compose -f compose.rabbitmq.yaml up -d
+```
+
+The management UI is on port 15672 (user `admin`).
+
+**Which one.** Mosquitto is a single small process and is enough for one site. RabbitMQ fits when the readings
+should also feed other consumers (an alarm service, a data export) without touching the bridge, each with its own
+queue bound to `amq.topic`, or when the operations team already runs it.
 
 ### Design decisions
 
@@ -176,7 +225,8 @@ cmake --build build/telemetry-test && ./build/telemetry-test/telemetry_test
 cmake -S firmware/components/onewire/test -B build/onewire-test
 cmake --build build/onewire-test && ./build/onewire-test/onewire_test
 
-# bridge: unit and integration tests (embedded MQTT broker, fake backend over real HTTP)
+# bridge: unit and integration tests (embedded MQTT broker, RabbitMQ in a container through Testcontainers,
+# fake backend over real HTTP); needs Docker
 cd bridge && ./mvnw verify
 ```
 
@@ -196,7 +246,8 @@ in `seq`:
 4. ok: seq 1..24 with no gaps, 12 readings taken during the outage delivered afterwards with their own timestamps, 0 duplicate(s)
 ```
 
-The `firmware-e2e` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) shows how to run it with Docker.
+The `firmware-e2e` job in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs it against Mosquitto and
+against RabbitMQ, each with this repository's config and users, and shows how to run it with Docker.
 
 GitHub Actions builds the firmware with Espressif's ESP-IDF image, runs the test suites, runs the end-to-end test
 and builds the bridge image.
@@ -220,15 +271,20 @@ que pega as leituras no broker e envia para o [backend do cold-monitor](https://
 O objetivo é não perder leitura quando a rede não é perfeita: o Wi-Fi cai, o broker reinicia, o backend está em
 deploy. Cada etapa guarda o dado até a próxima confirmar que recebeu.
 
-O diagrama acima vale para as duas línguas. A visão geral do sistema, os screenshots e o painel estão no
+O broker também pode ser o **RabbitMQ**, com o mesmo firmware: o plugin MQTT dele recebe as mensagens dos
+dispositivos, e a ponte consome uma fila durável por **AMQP**, com uma fila de erro (dead-letter) para o que ela não
+consegue encaminhar (veja [Com RabbitMQ](#com-rabbitmq)).
+
+Os diagramas acima valem para as duas línguas. A visão geral do sistema, os screenshots e o painel estão no
 [cold-monitor-infra](https://github.com/carloslpv/cold-monitor-infra).
 
 ### Situação
 
 O firmware compila no CI com ESP-IDF 5.4. A lógica de entrega e os drivers de 1-Wire e DS18B20 são cobertos por
 testes que rodam no PC, e a cada push o firmware de verdade roda no emulador QEMU contra a configuração de Mosquitto
-do repositório, com a conexão cortada por 30 segundos no meio (veja [Testes](#testes)). A ponte tem testes de
-integração com um broker embutido e um backend falso, e foi rodada de ponta a ponta com o
+do repositório e contra a de RabbitMQ, com a conexão cortada por 30 segundos no meio (veja [Testes](#testes)). A
+ponte tem testes de integração com um broker MQTT embutido, um RabbitMQ em contêiner e um backend falso, e foi rodada
+de ponta a ponta com o
 [`tools/fake_device.py`](tools/fake_device.py). O próximo passo é o teste de bancada com sondas reais.
 
 ### Estrutura
@@ -241,8 +297,9 @@ integração com um broker embutido e um backend falso, e foi rodada de ponta a 
 | [`firmware/components/ds18b20/`](firmware/components/ds18b20) | Driver do DS18B20: conversão, resolução, conferência do scratchpad |
 | [`firmware/components/onewire_sim/`](firmware/components/onewire_sim) | Barramento 1-Wire simulado com sondas DS18B20, usado nos testes dos drivers e no build do emulador |
 | [`firmware/test/qemu/`](firmware/test/qemu) | Teste de ponta a ponta do firmware rodando no QEMU |
-| [`bridge/`](bridge) | Serviço Java 25 / Spring Boot 4.1 do MQTT para a API do backend |
+| [`bridge/`](bridge) | Serviço Java 25 / Spring Boot 4.1 do MQTT ou do AMQP para a API do backend |
 | [`mosquitto/`](mosquitto) | Configuração do broker com ACL por dispositivo |
+| [`rabbitmq/`](rabbitmq), [`compose.rabbitmq.yaml`](compose.rabbitmq.yaml) | A mesma montagem com RabbitMQ: config, plugins e um script que cria os usuários com os mesmos direitos por dispositivo |
 | [`tools/fake_device.py`](tools/fake_device.py) | Publica como o firmware, para testar tudo sem hardware |
 
 ### Tópicos MQTT
@@ -281,6 +338,40 @@ broker entrega de novo depois do reinício.
 
 Entrega "pelo menos uma vez" quer dizer que pode haver duplicata: o firmware reenvia o que não foi confirmado. A
 ponte lembra as últimas 10 mil chaves `device/boot/seq` que encaminhou e descarta as repetidas.
+
+### Com RabbitMQ
+
+O firmware não muda: continua falando MQTT, agora com o plugin MQTT do RabbitMQ, que publica cada mensagem na
+exchange `amq.topic` trocando as barras do tópico por pontos. Com `BRIDGE_SOURCE=amqp` a ponte declara uma fila
+quorum durável ligada a `coldmonitor.*.readings` e `coldmonitor.*.status` e consome com confirmação manual e
+prefetch de um, então as garantias são as do caminho MQTT: a mensagem só é confirmada depois que o backend recebeu,
+e enquanto o backend está fora o acúmulo espera na fila, em ordem. O que o caminho MQTT só pode registrar e descartar
+(sonda não cadastrada, leitura que o backend recusa, mensagem malformada) aqui é rejeitado e vai para a fila
+`coldmonitor.bridge.dead`, onde espera alguém olhar (painel de administração, "Get messages") em vez de se
+perder.
+
+O RabbitMQ fecha o canal quando uma mensagem fica sem confirmação além do consumer timeout (30 minutos por padrão), o
+que acontece quando o backend fica fora esse tempo todo; a mensagem volta para a fila e a ponte abre um canal novo e
+segue.
+
+Os direitos são os mesmos da ACL do Mosquitto: o [`rabbitmq/users.sh`](rabbitmq/users.sh) dá a cada dispositivo
+permissão de tópico na `amq.topic` limitada a `coldmonitor.<seu usuário>.(readings|status)` para escrita e ao próprio
+`config` para leitura. Um dispositivo que publica com o id de outro é desconectado, e a assinatura do config de outro
+dispositivo é recusada. A ponte só mexe nas próprias filas e exchange.
+
+```bash
+cp .env.example .env    # RABBITMQ_ADMIN_PASSWORD, AMQP_BRIDGE_PASSWORD, URL e chave do backend, as sondas
+docker compose -f compose.rabbitmq.yaml up -d rabbitmq
+./rabbitmq/users.sh bridge              # pede a senha, a mesma do AMQP_BRIDGE_PASSWORD
+./rabbitmq/users.sh device cm-a1b2c3    # um usuário por dispositivo, com o id dele
+docker compose -f compose.rabbitmq.yaml up -d
+```
+
+O painel de administração fica na porta 15672 (usuário `admin`).
+
+**Qual usar.** O Mosquitto é um processo pequeno e basta para um local. O RabbitMQ compensa quando as leituras também
+precisam alimentar outros consumidores (um serviço de alarme, uma exportação de dados) sem mexer na ponte, cada um
+com a própria fila ligada à `amq.topic`, ou quando a equipe de operação já usa ele.
 
 ### Decisões técnicas
 
@@ -370,7 +461,8 @@ cmake --build build/telemetry-test && ./build/telemetry-test/telemetry_test
 cmake -S firmware/components/onewire/test -B build/onewire-test
 cmake --build build/onewire-test && ./build/onewire-test/onewire_test
 
-# ponte: testes unitários e de integração (broker MQTT embutido, backend falso por HTTP de verdade)
+# ponte: testes unitários e de integração (broker MQTT embutido, RabbitMQ em contêiner pelo Testcontainers,
+# backend falso por HTTP de verdade); precisa de Docker
 cd bridge && ./mvnw verify
 ```
 
@@ -379,8 +471,9 @@ sobe o emulador e faz o papel do resto do mundo: um servidor SNTP, um proxy TCP 
 com a configuração e a ACL deste repositório, e um assinante MQTT. Ele confere que as leituras chegam com valores e
 horários coerentes, corta a conexão por 30 segundos, confere que o broker publica o last will do dispositivo
 (`offline`), restaura a conexão e confere que toda leitura feita nesse meio-tempo é entregue com o horário em que foi
-feita, sem buraco no `seq`. O job `firmware-e2e` do [`.github/workflows/ci.yml`](.github/workflows/ci.yml) mostra
-como rodar com Docker.
+feita, sem buraco no `seq`. O job `firmware-e2e` do [`.github/workflows/ci.yml`](.github/workflows/ci.yml) roda
+contra o Mosquitto e contra o RabbitMQ, cada um com a configuração e os usuários deste repositório, e mostra como rodar
+com Docker.
 
 O GitHub Actions compila o firmware com a imagem ESP-IDF da Espressif, roda as suítes de teste, roda o teste de ponta
 a ponta e gera a imagem da ponte.
