@@ -1,0 +1,62 @@
+menu "cold-monitor edge"
+
+    config CM_WIFI_SSID
+        string "Wi-Fi SSID"
+        default "my-network"
+
+    config CM_WIFI_PASSWORD
+        string "Wi-Fi password"
+        default ""
+
+    config CM_MQTT_BROKER_URI
+        string "MQTT broker URI"
+        default "mqtt://192.168.0.10:1883"
+        help
+            mqtt:// for plain TCP on a local network, mqtts:// when the broker is reachable over the internet.
+
+    config CM_MQTT_USERNAME
+        string "MQTT user name"
+        default ""
+        help
+            Leave empty to log in with the device id, which is what the broker ACL in mosquitto/acl expects.
+
+    config CM_MQTT_PASSWORD
+        string "MQTT password"
+        default ""
+
+    config CM_DEVICE_ID
+        string "Device id"
+        default ""
+        help
+            Name used in the MQTT topics (coldmonitor/<device id>/...). Leave empty to use cm-<last three bytes of
+            the Wi-Fi MAC address>, which is unique per board.
+
+    config CM_ONEWIRE_GPIO
+        int "GPIO of the 1-Wire bus (DS18B20 data line)"
+        default 4
+
+    config CM_READ_INTERVAL_S
+        int "Seconds between readings"
+        range 5 3600
+        default 60
+        help
+            Can be changed at run time with a retained message on coldmonitor/<device id>/config.
+
+    config CM_OUTBOX_CAPACITY
+        int "Readings kept while offline"
+        range 16 4096
+        default 720
+        help
+            With one probe and one reading per minute, 720 readings cover 12 hours without network. Each reading
+            takes 48 bytes of RAM.
+
+    config CM_MAX_INFLIGHT
+        int "Readings published and not yet acknowledged"
+        range 1 32
+        default 8
+
+    config CM_NTP_SERVER
+        string "NTP server"
+        default "pool.ntp.org"
+
+endmenu

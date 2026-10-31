@@ -1,0 +1,5 @@
+# Settings every build starts from. Wi-Fi and broker credentials are not here: set them with `idf.py menuconfig`
+# (menu "cold-monitor edge"); the generated sdkconfig is ignored by git so secrets never reach the repository.
+CONFIG_ESP_TASK_WDT_EN=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=10
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
