@@ -17,7 +17,8 @@ extern "C" {
 int payload_encode_reading(char *buf, size_t size, const char *device_id, uint32_t boot_id, const reading_t *reading);
 
 /**
- * Formats a 1-Wire ROM code as 16 lowercase hex digits. The buffer needs at least 17 bytes.
+ * Formats a 1-Wire ROM code as 16 lowercase hex digits, family code first (28... for a DS18B20). The buffer needs
+ * at least 17 bytes.
  */
 void payload_format_probe(char *buf, uint64_t probe);
 

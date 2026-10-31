@@ -1,0 +1,43 @@
+{
+	"sources" : 
+	[
+		{
+			"file" : "/repo/firmware/build-qemu/CMakeFiles/bootloader"
+		},
+		{
+			"file" : "/repo/firmware/build-qemu/CMakeFiles/bootloader.rule"
+		},
+		{
+			"file" : "/repo/firmware/build-qemu/CMakeFiles/bootloader-complete.rule"
+		},
+		{
+			"file" : "/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule"
+		},
+		{
+			"file" : "/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule"
+		},
+		{
+			"file" : "/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule"
+		},
+		{
+			"file" : "/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule"
+		},
+		{
+			"file" : "/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule"
+		},
+		{
+			"file" : "/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule"
+		},
+		{
+			"file" : "/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule"
+		}
+	],
+	"target" : 
+	{
+		"labels" : 
+		[
+			"bootloader"
+		],
+		"name" : "bootloader"
+	}
+}

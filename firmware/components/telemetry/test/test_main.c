@@ -19,7 +19,8 @@ static int failures;
 
 static reading_t reading(uint32_t seq)
 {
-    reading_t r = { .seq = seq, .timestamp = 1761868800, .probe = 0x28ff4a1c0b160351ULL, .centi_celsius = 425 };
+    // family code 0x28 in the low byte, as read off the wire
+    reading_t r = { .seq = seq, .timestamp = 1761868800, .probe = 0x5103160b1c4aff28ULL, .centi_celsius = 425 };
     return r;
 }
 

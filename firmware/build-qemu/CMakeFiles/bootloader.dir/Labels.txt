@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/repo/firmware/build-qemu/CMakeFiles/bootloader
+/repo/firmware/build-qemu/CMakeFiles/bootloader.rule
+/repo/firmware/build-qemu/CMakeFiles/bootloader-complete.rule
+/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/repo/firmware/build-qemu/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule

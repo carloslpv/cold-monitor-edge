@@ -1,6 +1,5 @@
 #include "probes.h"
 
-#include <inttypes.h>
 #include <stdbool.h>
 
 #include "ds18b20.h"
@@ -47,7 +46,9 @@ static void search(void)
     }
     for (int i = 0; i < found; i++) {
         ds18b20_status_t status = ds18b20_set_resolution(&bus, roms[i], CONFIG_CM_DS18B20_RESOLUTION);
-        ESP_LOGI(TAG, "found DS18B20 %016" PRIx64 " (%s)", roms[i], status_text(status));
+        char hex[17];
+        onewire_rom_to_hex(roms[i], hex);
+        ESP_LOGI(TAG, "found DS18B20 %s (%s)", hex, status_text(status));
     }
     probe_count = (size_t)found;
     search_needed = false;
@@ -74,7 +75,9 @@ size_t probes_read(probe_reading_t *out, size_t max)
         int32_t centi;
         ds18b20_status_t status = ds18b20_read(&bus, roms[i], &centi);
         if (status != DS18B20_OK) {
-            ESP_LOGW(TAG, "probe %016" PRIx64 ": %s", roms[i], status_text(status));
+            char hex[17];
+            onewire_rom_to_hex(roms[i], hex);
+            ESP_LOGW(TAG, "probe %s: %s", hex, status_text(status));
             // usually a probe that was unplugged or swapped: look at the bus again next time
             search_needed = true;
             continue;

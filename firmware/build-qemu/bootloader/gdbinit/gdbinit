@@ -1,0 +1,2 @@
+source /repo/firmware/build-qemu/bootloader/gdbinit/symbols
+source /repo/firmware/build-qemu/bootloader/gdbinit/connect
