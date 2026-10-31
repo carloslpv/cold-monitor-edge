@@ -3,6 +3,7 @@ mosquitto/passwd
 
 # ESP-IDF
 firmware/build/
+firmware/build-*/
 firmware/managed_components/
 firmware/dependencies.lock
 firmware/sdkconfig

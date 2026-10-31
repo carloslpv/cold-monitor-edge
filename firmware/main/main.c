@@ -16,6 +16,7 @@
 #include "nvs_flash.h"
 #include "outbox.h"
 #include "probes.h"
+#include "qemu_network.h"
 #include "wall_clock.h"
 #include "wifi.h"
 
@@ -104,7 +105,11 @@ void app_main(void)
 
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
+#if CONFIG_CM_NETWORK_QEMU
+    qemu_network_start();
+#else
     wifi_start(CONFIG_CM_WIFI_SSID, CONFIG_CM_WIFI_PASSWORD);
+#endif
 
     // measure from the start, even before Wi-Fi: those readings wait in the outbox, and the ones taken before NTP
     // sets the clock are dated from the uptime when they are sent

@@ -1,5 +1,19 @@
 menu "cold-monitor edge"
 
+    choice CM_NETWORK
+        prompt "Network"
+        default CM_NETWORK_WIFI
+
+        config CM_NETWORK_WIFI
+            bool "Wi-Fi"
+
+        config CM_NETWORK_QEMU
+            bool "Emulated Ethernet (QEMU)"
+            select ETH_USE_OPENETH
+            help
+                For running the firmware in the ESP-IDF QEMU emulator, which has no Wi-Fi. Does not work on a board.
+    endchoice
+
     config CM_WIFI_SSID
         string "Wi-Fi SSID"
         default "my-network"
@@ -34,6 +48,14 @@ menu "cold-monitor edge"
     config CM_ONEWIRE_GPIO
         int "GPIO of the 1-Wire bus (DS18B20 data line)"
         default 4
+
+    config CM_SIMULATED_PROBES
+        bool "Simulated probes"
+        default n
+        help
+            Replaces the GPIO with a simulated 1-Wire bus holding two DS18B20 probes, a fridge around 5 °C and a
+            freezer around -25 °C. The search, driver and outbox run unchanged; only the wire is fake. For the
+            emulator, or for trying the firmware on a board without probes.
 
     config CM_DS18B20_RESOLUTION
         int "DS18B20 resolution (bits)"
