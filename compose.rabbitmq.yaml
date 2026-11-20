@@ -12,7 +12,7 @@ services:
       RABBITMQ_DEFAULT_USER: admin
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_ADMIN_PASSWORD:?set RABBITMQ_ADMIN_PASSWORD in .env}
     ports:
-      - "1883:1883" # MQTT, for the devices
+      - "${MQTT_PORT:-1883}:1883" # MQTT, for the devices
       - "15672:15672" # management UI
     volumes:
       - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/90-cold-monitor.conf:ro
@@ -35,7 +35,7 @@ services:
       AMQP_URI: amqp://rabbitmq:5672
       AMQP_USERNAME: bridge
       AMQP_PASSWORD: ${AMQP_BRIDGE_PASSWORD:?set AMQP_BRIDGE_PASSWORD in .env}
-      BACKEND_URL: ${BACKEND_URL:-http://host.docker.internal:8080}
+      BACKEND_URL: ${BACKEND_URL:-http://host.docker.internal:8090}
       BACKEND_API_KEY: ${BACKEND_API_KEY:?set BACKEND_API_KEY in .env}
       BRIDGE_PROBES: ${BRIDGE_PROBES:-}
     extra_hosts:
