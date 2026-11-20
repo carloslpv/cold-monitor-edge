@@ -175,6 +175,11 @@ docker run --rm -it -v ./mosquitto:/mosquitto/config eclipse-mosquitto:2 \
 docker compose up -d
 ```
 
+`BACKEND_URL` defaults to `http://host.docker.internal:8090`, the address of
+[cold-monitor-infra](https://github.com/carloslpv/cold-monitor-infra) on the same computer: its nginx forwards `/api`
+to the backend, whose own port is not published. For a backend started alone (`./mvnw spring-boot:run`), use port
+8080. `MQTT_PORT` moves the broker off 1883 when that port is taken.
+
 The bridge serves health and Prometheus metrics on port 8081 (`/actuator/health`, `/actuator/prometheus`):
 readings by outcome (`forwarded`, `duplicate`, `unknown_probe`, `rejected`, `invalid`), retries and devices online.
 
@@ -410,6 +415,11 @@ docker run --rm -it -v ./mosquitto:/mosquitto/config eclipse-mosquitto:2 \
   mosquitto_passwd /mosquitto/config/passwd cm-a1b2c3      # um usuário por dispositivo, com o id dele
 docker compose up -d
 ```
+
+O `BACKEND_URL` padrão é `http://host.docker.internal:8090`, o endereço do
+[cold-monitor-infra](https://github.com/carloslpv/cold-monitor-infra) no mesmo computador: o nginx dele repassa `/api`
+ao backend, cuja porta própria não é publicada. Para um backend rodando sozinho (`./mvnw spring-boot:run`), use a
+porta 8080. `MQTT_PORT` tira o broker da 1883 quando essa porta já está ocupada.
 
 A ponte expõe saúde e métricas Prometheus na porta 8081 (`/actuator/health`, `/actuator/prometheus`): leituras por
 resultado (`forwarded`, `duplicate`, `unknown_probe`, `rejected`, `invalid`), novas tentativas e dispositivos online.
